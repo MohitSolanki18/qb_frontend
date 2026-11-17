@@ -31,7 +31,31 @@ async function createDeliveryAgent(e){e.preventDefault();const form=e.currentTar
 async function assignAgent(orderId,agentId){if(!agentId)return;try{const d=await call("/orders/"+orderId+"/assign-agent",{token,method:"PATCH",body:JSON.stringify({agentId})});setAllOrders(p=>p.map(o=>o._id===orderId?{...o,deliveryAgent:d.order.deliveryAgent}:o));notify("Delivery agent assigned")}catch(e){notify(e.message)}}
 async function showDelivery(){try{const d=await call("/delivery/orders",{token});setDeliveryOrders(d.orders);setModal("delivery")}catch(e){notify(e.message)}}
 async function updateAgentStatus(id,status){try{const d=await call("/delivery/orders/"+id+"/status",{token,method:"PATCH",body:JSON.stringify({status})});setDeliveryOrders(p=>p.map(o=>o._id===id?{...o,status:d.order.status,deliveryLocation:d.order.deliveryLocation}:o).filter(o=>!['Delivered','Cancelled'].includes(o.status)));notify("Order status updated")}catch(e){notify(e.message)}}
-function navigateToCustomer(order){if(!order.customer?.address){notify("This order has no delivery address.");return}const win=window.open("about:blank","_blank");if(!win){notify("Allow pop-ups to open navigation.");return}const openRoute=(origin="")=>{const q=new URLSearchParams({api:"1",destination:order.customer.address,travelmode:"driving"});if(origin)q.set("origin",origin);win.location.href="https://www.google.com/maps/dir/?"+q.toString()};if(navigator.geolocation&&window.isSecureContext)navigator.geolocation.getCurrentPosition(p=>openRoute(p.coords.latitude+","+p.coords.longitude),()=>openRoute(),{enableHighAccuracy:true,timeout:7000,maximumAge:60000});else openRoute()}
+// function navigateToCustomer(order){if(!order.customer?.address){notify("This order has no delivery address.");return}const win=window.open("about:blank","_blank");if(!win){notify("Allow pop-ups to open navigation.");return}const openRoute=(origin="")=>{const q=new URLSearchParams({api:"1",destination:order.customer.address,travelmode:"driving"});if(origin)q.set("origin",origin);win.location.href="https://www.google.com/maps/dir/?"+q.toString()};if(navigator.geolocation&&window.isSecureContext)navigator.geolocation.getCurrentPosition(p=>openRoute(p.coords.latitude+","+p.coords.longitude),()=>openRoute(),{enableHighAccuracy:true,timeout:7000,maximumAge:60000});else openRoute()}
+
+function navigateToCustomer(order) {
+  const address = order?.customer?.address;
+
+  if (!address) {
+    notify("This order has no delivery address.");
+    return;
+  }
+
+  const q = new URLSearchParams({
+    api: "1",
+    destination: address,
+    travelmode: "driving"
+  });
+
+  const url = `https://www.google.com/maps/dir/?${q.toString()}`;
+
+  const win = window.open(url, "_blank");
+
+  if (!win) {
+    notify("Allow pop-ups to open navigation.");
+  }
+}
+
 async function updateStatus(id,status){try{await call("/orders/"+id+"/status",{token,method:"PATCH",body:JSON.stringify({status})});setAllOrders(p=>p.map(o=>o._id===id?{...o,status}:o));notify("Status updated")}catch(e){notify(e.message)}}
 function startLiveSharing(order){if(!navigator.geolocation){notify("This browser does not support GPS location.");return}if(!window.isSecureContext){notify("GPS sharing needs HTTPS or localhost.");return}if(watchRef.current!==null)navigator.geolocation.clearWatch(watchRef.current);setSharingOrder(order._id);lastLocationSent.current=0;notify("Allow location permission to start live sharing.");const watchId=navigator.geolocation.watchPosition(async pos=>{const now=Date.now();if(now-lastLocationSent.current<5000)return;lastLocationSent.current=now;try{await call("/orders/"+order._id+"/location",{token,method:"PATCH",body:JSON.stringify({latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:pos.coords.accuracy})});setAllOrders(prev=>prev.map(o=>o._id===order._id?{...o,deliveryLocation:{latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:pos.coords.accuracy,updatedAt:new Date().toISOString()}}:o))}catch(e){notify(e.message);navigator.geolocation.clearWatch(watchId);watchRef.current=null;setSharingOrder("")}},err=>{setSharingOrder("");notify(err.code===1?"Location permission denied.":"Could not get GPS location. Check device settings.")},{enableHighAccuracy:true,maximumAge:3000,timeout:15000});watchRef.current=watchId}
 async function stopLiveSharing(orderId){if(watchRef.current!==null&&navigator.geolocation)navigator.geolocation.clearWatch(watchRef.current);watchRef.current=null;setSharingOrder("");try{await call("/orders/"+orderId+"/location",{token,method:"DELETE"});setAllOrders(prev=>prev.map(o=>o._id===orderId?{...o,deliveryLocation:null}:o));setDeliveryOrders(prev=>prev.map(o=>o._id===orderId?{...o,deliveryLocation:null}:o));notify("Live location sharing stopped")}catch(e){notify(e.message)}}
